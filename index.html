@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>SKETCH WORLD</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background:#0f0f1a;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  min-height:100vh; font-family:Arial,sans-serif; color:#fff; gap:10px;
+}
+#title { font-size:11px; letter-spacing:3px; color:#444; }
+#stage {
+  position:relative; width:640px; height:480px;
+  border:1px solid #2a2a3e; border-radius:4px; overflow:hidden;
+}
+#webcam { position:absolute; top:0; left:0; width:640px; height:480px; transform:scaleX(-1); object-fit:cover; z-index:1; }
+#draw-canvas { position:absolute; top:0; left:0; width:640px; height:480px; z-index:2; }
+#landmark-canvas { position:absolute; top:0; left:0; width:640px; height:480px; z-index:3; pointer-events:none; }
+#hud { position:absolute; top:10px; left:12px; font-size:11px; color:#4ecdc4; letter-spacing:1px; text-shadow:0 1px 6px rgba(0,0,0,0.9); pointer-events:none; z-index:4; }
+#loading-overlay { position:absolute; top:0; left:0; width:640px; height:480px; z-index:6; display:none; flex-direction:column; align-items:center; justify-content:center; background:rgba(0,0,0,0.85); }
+#loading-text { font-size:13px; color:#4ecdc4; letter-spacing:2px; margin-bottom:12px; }
+#loading-bar-wrap { width:300px; height:3px; background:#222; border-radius:2px; }
+#loading-bar { height:3px; background:#4ecdc4; border-radius:2px; width:0%; transition:width 0.3s; }
+#result-overlay { position:absolute; top:0; left:0; width:640px; height:480px; z-index:5; display:none; flex-direction:column; align-items:center; justify-content:center; background:rgba(0,0,0,0.7); }
+#result-img { max-width:600px; max-height:440px; border:2px solid #4ecdc4; border-radius:4px; }
+#result-close { margin-top:8px; font-size:11px; color:#4ecdc4; cursor:pointer; letter-spacing:2px; }
+
+/* 툴바 */
+#toolbar {
+  display:flex; align-items:center; gap:16px;
+  background:#1a1a2e; padding:10px 18px;
+  border-radius:6px; border:1px solid #2a2a3e;
+  width:640px; justify-content:space-between;
+}
+.tg { display:flex; align-items:center; gap:8px; }
+.lbl { font-size:10px; color:#555; letter-spacing:1px; }
+input[type=range] { -webkit-appearance:none; width:80px; height:3px; background:#333; border-radius:2px; outline:none; }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:12px; height:12px; border-radius:50%; background:#4ecdc4; cursor:pointer; }
+.btn { background:none; border:1px solid #333; color:#888; padding:5px 10px; border-radius:4px; font-size:10px; cursor:pointer; letter-spacing:1px; transition:all 0.15s; }
+.btn:hover { border-color:#4ecdc4; color:#4ecdc4; }
+.btn.danger:hover { border-color:#e74c3c; color:#e74c3c; }
+
+/* 스타일 선택 버튼 */
+#style-bar {
+  display:flex; align-items:center; gap:8px;
+  width:640px;
+}
+.style-btn {
+  flex:1;
+  background:#1a1a2e;
+  border:1px solid #2a2a3e;
+  color:#666;
+  padding:8px 0;
+  border-radius:4px;
+  font-size:11px;
+  cursor:pointer;
+  letter-spacing:1px;
+  transition:all 0.15s;
+  text-align:center;
+}
+.style-btn:hover { border-color:#4ecdc4; color:#4ecdc4; }
+.style-btn.active { border-color:#4ecdc4; color:#4ecdc4; background:#0d2a29; }
+
+/* 전송 버튼 */
+#send-btn { background:#1a3a38; border:1px solid #4ecdc4; color:#4ecdc4; padding:7px 18px; border-radius:4px; font-size:11px; letter-spacing:2px; cursor:pointer; transition:all 0.2s; }
+#send-btn:hover { background:#4ecdc4; color:#0f0f1a; }
+#send-btn:disabled { opacity:0.3; cursor:not-allowed; background:#1a3a38; color:#4ecdc4; }
+#status { font-size:10px; color:#444; letter-spacing:1px; text-align:center; }
+#status.active { color:#4ecdc4; }
+#status.sending { color:#f39c12; }
+#status.done { color:#2ecc71; }
+#status.error { color:#e74c3c; }
+#guide { font-size:10px; color:#333; letter-spacing:1px; text-align:center; }
+</style>
+</head>
+<body>
+<div id="title">SKETCH WORLD — Hand Gesture Drawing → AI Style Transfer</div>
+
+<div id="stage">
+  <video id="webcam" autoplay playsinline muted></video>
+  <canvas id="draw-canvas" width="640" height="480"></canvas>
+  <canvas id="landmark-canvas" width="640" height="480"></canvas>
+  <div id="hud">손 인식 대기 중...</div>
+  <div id="loading-overlay">
+    <div id="loading-text">AI 변환 중...</div>
+    <div id="loading-bar-wrap"><div id="loading-bar"></div></div>
+  </div>
+  <div id="result-overlay">
+    <img id="result-img" src="" alt="AI 결과">
+    <div id="result-close">[ 클릭하여 계속 그리기 ]</div>
+  </div>
+</div>
+
+<!-- 스타일 선택 -->
+<div id="style-bar">
+  <button class="style-btn active" data-style="watercolor">🎨 수채화</button>
+  <button class="style-btn" data-style="oilpainting">🖼 유화</button>
+  <button class="style-btn" data-style="anime">✨ 애니</button>
+  <button class="style-btn" data-style="sketch">✏️ 펜스케치</button>
+</div>
+
+<div id="toolbar">
+  <div class="tg">
+    <span class="lbl">SIZE</span>
+    <input type="range" id="brush-size" min="2" max="28" value="6">
+    <span id="size-val" style="font-size:10px;color:#555;min-width:18px">6</span>
+  </div>
+  <div class="tg">
+    <span class="lbl">OPACITY</span>
+    <input type="range" id="brush-opacity" min="20" max="100" value="90">
+    <span id="opacity-val" style="font-size:10px;color:#555;min-width:28px">90%</span>
+  </div>
+  <div class="tg">
+    <button class="btn danger" id="btn-clear">CLEAR</button>
+    <button class="btn" id="btn-save">SAVE PNG</button>
+  </div>
+  <button id="send-btn">→ AI 변환</button>
+</div>
+
+<div id="status">웹캠 시작 중...</div>
+<div id="guide">✏ 검지 펴기 → 그리기 &nbsp;|&nbsp; ✊ 주먹 → 지우기 &nbsp;|&nbsp; ✌ 검지+중지 → 멈춤</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<script>
+const video          = document.getElementById('webcam');
+const drawCanvas     = document.getElementById('draw-canvas');
+const ldCanvas       = document.getElementById('landmark-canvas');
+const dctx           = drawCanvas.getContext('2d');
+const lctx           = ldCanvas.getContext('2d');
+const hud            = document.getElementById('hud');
+const statusEl       = document.getElementById('status');
+const sendBtn        = document.getElementById('send-btn');
+const loadingOverlay = document.getElementById('loading-overlay');
+const loadingBar     = document.getElementById('loading-bar');
+const loadingText    = document.getElementById('loading-text');
+const resultOverlay  = document.getElementById('result-overlay');
+const resultImg      = document.getElementById('result-img');
+
+const COMFY_URL = 'http://127.0.0.1:8000';
+
+// ── 스타일 프리셋 ──────────────────────────────────────────
+const STYLES = {
+  watercolor: {
+    label: '수채화',
+    positive: 'watercolor painting, soft flowing brushstrokes, delicate color washes, white paper texture, loose painterly illustration, pastel tones, high quality art',
+    negative: 'photorealistic, 3d render, harsh lines, noise, blurry, low quality, dark',
+  },
+  oilpainting: {
+    label: '유화',
+    positive: 'oil painting, thick impasto brushstrokes, rich vibrant colors, canvas texture, impressionist style, fine art, high quality painting',
+    negative: 'photorealistic, digital art, flat colors, noise, blurry, low quality, anime',
+  },
+  anime: {
+    label: '애니',
+    positive: 'anime style illustration, clean sharp lines, vibrant colors, cel shading, studio ghibli, high quality anime art',
+    negative: 'photorealistic, 3d render, noise, blurry, low quality, dark, western cartoon',
+  },
+  sketch: {
+    label: '펜스케치',
+    positive: 'pen and ink sketch, fine linework, black and white illustration, detailed crosshatching, artistic drawing, high quality',
+    negative: 'color, photorealistic, blurry, low quality, noise, painting',
+  },
+};
+
+let currentStyle = 'watercolor';
+
+// 스타일 버튼 이벤트
+document.querySelectorAll('.style-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.style-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentStyle = btn.dataset.style;
+    statusEl.textContent = `스타일: ${STYLES[currentStyle].label}`;
+    statusEl.className = 'active';
+  });
+});
+
+dctx.clearRect(0, 0, 640, 480);
+let lastX = null, lastY = null;
+let brushSize = 6, brushOpacity = 0.9;
+
+document.getElementById('brush-size').addEventListener('input', e => {
+  brushSize = parseInt(e.target.value);
+  document.getElementById('size-val').textContent = brushSize;
+});
+document.getElementById('brush-opacity').addEventListener('input', e => {
+  brushOpacity = parseInt(e.target.value) / 100;
+  document.getElementById('opacity-val').textContent = e.target.value + '%';
+});
+
+function drawSketch(x1, y1, x2, y2) {
+  dctx.lineCap = 'round'; dctx.lineJoin = 'round';
+  dctx.beginPath(); dctx.globalAlpha = brushOpacity;
+  dctx.strokeStyle = 'rgb(20,20,20)'; dctx.lineWidth = brushSize;
+  dctx.moveTo(x1, y1); dctx.lineTo(x2, y2); dctx.stroke();
+  if (brushSize > 2) {
+    for (let i = 0; i < 2; i++) {
+      const j = brushSize * 0.3;
+      const ox = (Math.random()-0.5)*j, oy = (Math.random()-0.5)*j;
+      dctx.beginPath(); dctx.globalAlpha = brushOpacity*0.18;
+      dctx.lineWidth = brushSize*0.4;
+      dctx.moveTo(x1+ox, y1+oy); dctx.lineTo(x2+ox, y2+oy); dctx.stroke();
+    }
+  }
+  dctx.globalAlpha = 1.0;
+}
+
+function eraseAt(x, y) {
+  dctx.globalCompositeOperation = 'destination-out';
+  dctx.beginPath(); dctx.arc(x, y, brushSize*2.5, 0, Math.PI*2);
+  dctx.fillStyle = 'rgba(0,0,0,1)'; dctx.fill();
+  dctx.globalCompositeOperation = 'source-over';
+}
+
+function getGesture(lm) {
+  const indexUp  = lm[8].y  < lm[6].y;
+  const middleUp = lm[12].y < lm[10].y;
+  const ringUp   = lm[16].y < lm[14].y;
+  const pinkyUp  = lm[20].y < lm[18].y;
+  if (!indexUp && !middleUp && !ringUp && !pinkyUp) return 'erase';
+  if (indexUp && middleUp) return 'idle';
+  if (indexUp && !middleUp) return 'draw';
+  return 'idle';
+}
+
+const hands = new Hands({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
+hands.setOptions({ maxNumHands:1, modelComplexity:1, minDetectionConfidence:0.7, minTrackingConfidence:0.6 });
+
+hands.onResults(results => {
+  lctx.clearRect(0, 0, 640, 480);
+  if (!results.multiHandLandmarks?.length) {
+    hud.textContent = '손 인식 대기 중...'; hud.style.color = '#444';
+    lastX = null; lastY = null; return;
+  }
+  const lm = results.multiHandLandmarks[0];
+  const tipX = (1 - lm[8].x) * 640, tipY = lm[8].y * 480;
+  const gesture = getGesture(lm);
+  const hudText  = { draw:'✏ 그리는 중', erase:'✊ 지우기', idle:'✌ 멈춤' };
+  const hudColor = { draw:'#4ecdc4', erase:'#e74c3c', idle:'#f39c12' };
+  hud.textContent = hudText[gesture]; hud.style.color = hudColor[gesture];
+  if (gesture === 'draw') {
+    if (lastX !== null) drawSketch(lastX, lastY, tipX, tipY);
+    lastX = tipX; lastY = tipY;
+  } else if (gesture === 'erase') {
+    eraseAt(tipX, tipY); lastX = null; lastY = null;
+  } else { lastX = null; lastY = null; }
+  drawOverlay(lm, tipX, tipY, gesture);
+});
+
+function drawOverlay(lm, tipX, tipY, gesture) {
+  const conn = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],
+    [0,9],[9,10],[10,11],[11,12],[0,13],[13,14],[14,15],[15,16],
+    [0,17],[17,18],[18,19],[19,20],[5,9],[9,13],[13,17]];
+  lctx.strokeStyle = 'rgba(78,205,196,0.25)'; lctx.lineWidth = 1;
+  conn.forEach(([a,b]) => {
+    lctx.beginPath();
+    lctx.moveTo((1-lm[a].x)*640, lm[a].y*480);
+    lctx.lineTo((1-lm[b].x)*640, lm[b].y*480); lctx.stroke();
+  });
+  lm.forEach((p,i) => {
+    if (i===8) return;
+    lctx.beginPath(); lctx.arc((1-p.x)*640, p.y*480, 2.5, 0, Math.PI*2);
+    lctx.fillStyle='rgba(78,205,196,0.4)'; lctx.fill();
+  });
+  const c = {draw:'#4ecdc4', erase:'#e74c3c', idle:'#f39c12'}[gesture];
+  lctx.beginPath(); lctx.arc(tipX, tipY, brushSize/2+5, 0, Math.PI*2);
+  lctx.strokeStyle=c; lctx.lineWidth=1.5; lctx.stroke();
+  lctx.beginPath(); lctx.strokeStyle=c; lctx.lineWidth=1;
+  lctx.moveTo(tipX-10,tipY); lctx.lineTo(tipX+10,tipY);
+  lctx.moveTo(tipX,tipY-10); lctx.lineTo(tipX,tipY+10); lctx.stroke();
+}
+
+(async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video:{width:640,height:480,facingMode:'user'} });
+    video.srcObject = stream;
+    video.onloadedmetadata = () => {
+      statusEl.textContent = '손을 화면 앞에 올려주세요'; statusEl.className = 'active';
+      const cam = new Camera(video, { onFrame: async () => { await hands.send({image:video}); }, width:640, height:480 });
+      cam.start();
+    };
+  } catch(e) { statusEl.textContent = '웹캠 오류: '+e.message; statusEl.className='error'; }
+})();
+
+document.getElementById('btn-clear').addEventListener('click', () => {
+  dctx.clearRect(0, 0, 640, 480); lastX=null; lastY=null;
+});
+
+document.getElementById('btn-save').addEventListener('click', () => {
+  const tmp = document.createElement('canvas'); tmp.width=640; tmp.height=480;
+  const tctx = tmp.getContext('2d');
+  tctx.save(); tctx.translate(640,0); tctx.scale(-1,1);
+  tctx.drawImage(video,0,0,640,480); tctx.restore();
+  tctx.drawImage(drawCanvas,0,0);
+  const link = document.createElement('a');
+  link.download='sketch_'+Date.now()+'.png'; link.href=tmp.toDataURL('image/png'); link.click();
+});
+
+document.getElementById('result-close').addEventListener('click', () => {
+  resultOverlay.style.display = 'none';
+  dctx.clearRect(0, 0, 640, 480);
+  sendBtn.disabled = false;
+  statusEl.textContent = '손을 화면 앞에 올려주세요'; statusEl.className='active';
+});
+
+sendBtn.addEventListener('click', async () => {
+  sendBtn.disabled = true;
+  showLoading('스케치 캡처 중...', 10);
+
+  // 흰 배경 + 스케치만 전송 (웹캠 얼굴 제외)
+  const tmp = document.createElement('canvas'); tmp.width=640; tmp.height=480;
+  const tctx = tmp.getContext('2d');
+  tctx.fillStyle = '#ffffff'; tctx.fillRect(0,0,640,480);
+  tctx.drawImage(drawCanvas,0,0);
+  const base64Image = tmp.toDataURL('image/png');
+
+  try {
+    showLoading('ComfyUI에 이미지 전송 중...', 25);
+    const filename = await uploadImage(base64Image);
+
+    showLoading(`${STYLES[currentStyle].label} 스타일 변환 중...`, 40);
+    const promptId = await runWorkflow(filename);
+
+    showLoading('AI 생성 중... (30초~1분)', 55);
+    const outputImage = await pollResult(promptId);
+
+    showLoading('완성!', 100);
+    await new Promise(r => setTimeout(r, 500));
+    hideLoading();
+    showResult(outputImage);
+    statusEl.textContent = `✓ ${STYLES[currentStyle].label} 변환 완료!`; statusEl.className='done';
+
+  } catch(e) {
+    hideLoading();
+    statusEl.textContent = '오류: '+e.message; statusEl.className='error';
+    sendBtn.disabled = false;
+  }
+});
+
+async function uploadImage(base64DataURL) {
+  const base64 = base64DataURL.split(',')[1];
+  const byteString = atob(base64);
+  const ab = new ArrayBuffer(byteString.length);
+  const ia = new Uint8Array(ab);
+  for (let i=0; i<byteString.length; i++) ia[i] = byteString.charCodeAt(i);
+  const blob = new Blob([ab], {type:'image/png'});
+  const uniqueName = 'sketch_' + Date.now() + '.png';
+  const formData = new FormData();
+  formData.append('image', blob, uniqueName);
+  formData.append('overwrite', 'true');
+  const res = await fetch(`${COMFY_URL}/upload/image`, { method:'POST', body:formData });
+  if (!res.ok) throw new Error('업로드 실패: '+res.status);
+  const data = await res.json();
+  return data.name;
+}
+
+async function runWorkflow(inputFilename) {
+  const style = STYLES[currentStyle];
+  const prompt = {
+    "1": { "class_type":"LoadImage", "inputs":{ "image":inputFilename } },
+    "9": { "class_type":"ImageScale", "inputs":{ "image":["1",0], "upscale_method":"nearest-exact", "width":512, "height":512, "crop":"disabled" } },
+    "2": { "class_type":"CheckpointLoaderSimple", "inputs":{ "ckpt_name":"dreamshaper_8.safetensors" } },
+    "3": { "class_type":"VAEEncode", "inputs":{ "pixels":["9",0], "vae":["2",2] } },
+    "4": {
+      "class_type":"KSampler",
+      "inputs":{
+        "model":["2",0],
+        "positive":["5",0],
+        "negative":["6",0],
+        "latent_image":["3",0],
+        "seed": Math.floor(Math.random()*999999999),
+        "steps": 20,       // 최종 세팅
+        "cfg": 7.0,        // 최종 세팅
+        "sampler_name":"euler_ancestral",
+        "scheduler":"karras",
+        "denoise": 0.6     // 최종 세팅
+      }
+    },
+    "5": { "class_type":"CLIPTextEncode", "inputs":{ "text": style.positive, "clip":["2",1] } },
+    "6": { "class_type":"CLIPTextEncode", "inputs":{ "text": style.negative, "clip":["2",1] } },
+    "7": { "class_type":"VAEDecode", "inputs":{ "samples":["4",0], "vae":["2",2] } },
+    "8": { "class_type":"SaveImage", "inputs":{ "images":["7",0], "filename_prefix":"sketch_world" } }
+  };
+  const res = await fetch(`${COMFY_URL}/prompt`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({prompt}) });
+  if (!res.ok) throw new Error('워크플로우 실패: '+res.status);
+  const data = await res.json();
+  return data.prompt_id;
+}
+
+async function pollResult(promptId) {
+  return new Promise((resolve, reject) => {
+    let elapsed = 0;
+    const interval = setInterval(async () => {
+      elapsed += 2;
+      updateLoadingBar(Math.min(55 + elapsed*1.5, 95));
+      try {
+        const res = await fetch(`${COMFY_URL}/history/${promptId}`);
+        const history = await res.json();
+        if (history[promptId]?.outputs) {
+          clearInterval(interval);
+          const outputs = history[promptId].outputs;
+          const imgNode = Object.values(outputs).find(o => o.images?.length);
+          if (imgNode) resolve(imgNode.images[0]);
+          else reject(new Error('결과 이미지 없음'));
+        }
+      } catch(e) {}
+      if (elapsed > 180) { clearInterval(interval); reject(new Error('타임아웃')); }
+    }, 2000);
+  });
+}
+
+function showResult(imageInfo) {
+  const url = `${COMFY_URL}/view?filename=${imageInfo.filename}&subfolder=${imageInfo.subfolder||''}&type=output`;
+  resultImg.src = url;
+  resultOverlay.style.display = 'flex';
+}
+
+function showLoading(text, pct) {
+  loadingText.textContent = text;
+  loadingBar.style.width = pct + '%';
+  loadingOverlay.style.display = 'flex';
+}
+function updateLoadingBar(pct) { loadingBar.style.width = pct + '%'; }
+function hideLoading() { loadingOverlay.style.display='none'; loadingBar.style.width='0%'; }
+</script>
+</body>
+</html>
