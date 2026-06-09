@@ -1,8 +1,9 @@
 # SKETCH WORLD
 
 손 제스처로 그림을 그리고, AI가 수채화·유화·애니 스타일로 변환해주는 웹 앱입니다.
+<img width="1440" height="900" alt="스크린샷 2026-06-09 오후 4 20 26" src="https://github.com/user-attachments/assets/c2d87ba3-0d10-4e59-9fad-697b2bad6ef7" />
 
-![preview](https://github.com/user-attachments/assets/placeholder)
+
 
 ## 기능
 
